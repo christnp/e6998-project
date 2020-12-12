@@ -1,0 +1,12 @@
+# ignore all hidden files/dirs
+.*
+
+# do not ignore hidden git files/dirs
+!.gitignore
+!.git
+
+# keep data directory, but ignore data
+data/*/
+
+# ignore jupyter checkpoints at all levels
+**/.ipynb_checkpoints/
