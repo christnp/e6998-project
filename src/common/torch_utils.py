@@ -11,36 +11,61 @@ from pprint import pprint
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
 import torch.backends.cudnn as cudnn
 import torchvision
 from torchvision import datasets, models, transforms
+from torch.utils.data import Subset
 
 from scipy.optimize import curve_fit
 from sklearn import linear_model
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
 
 
-def mnist_dataloader(data_transform, batch_size, 
-                     data_dir='../../data', download=True,
-                     train=True):
+def mnist_dataloader(data_transforms, batch_size, 
+                     pred_size=0.05, data_dir='../../data', 
+                     download=True):
+    ''' returns dataloaders and dataset info for MNIST'''
+    # create the dir for data
     if not os.path.isdir(data_dir):
         os.mkdir(data_dir)
+        
+    print(f'Data will be located in \'{data_dir}\'')
 
-    # get the data
-    dataset = torchvision.datasets.MNIST(root=data_dir, 
-                                        train=train,
+    # get the training data
+    train_set = torchvision.datasets.MNIST(root=data_dir, 
+                                        train=True,
                                         download=download, 
-                                        transform=data_transform)
-    print(f'Data is located in \'{data_dir}\'')
-
+                                        transform=data_transforms['train'])
+    
+    # get the validation data
+    val_set = torchvision.datasets.MNIST(root=data_dir, 
+                                        train=False,
+                                        download=download, 
+                                        transform=data_transforms['val'])
+    
+    # split off a small chunk for predicting
+    val_idx, pred_idx = train_test_split(list(range(len(val_set))), 
+                                          test_size=pred_size)
+    val_set = Subset(val_set, val_idx)
+    pred_set = Subset(val_set, pred_idx)
+    
     # make the dataloader
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, 
-                                             batch_size=batch_size,
-                                             shuffle=True, 
-                                             num_workers=4)
-    return {'dataset':dataset, 'dataloader':dataloader}
+    dataloaders = {}
+    image_datasets = {'train':train_set, 'val':val_set, 'pred':pred_set}
+    for x in image_datasets:
+        dataloaders[x] = torch.utils.data.DataLoader(image_datasets[x], 
+                                                      batch_size=batch_size,
+                                                      shuffle=True, num_workers=4)
+    # collect the dataset size and class names
+    dataset_sizes = {x: len(image_datasets[x]) for x in image_datasets}
+    class_names = image_datasets['train'].classes
+    
+    return dataloaders, dataset_sizes, class_names
+
 
 def dataset_preview(dataloader,title=''):
     # Get a batch of training data
@@ -60,13 +85,14 @@ def dataset_preview(dataloader,title=''):
         axn = fig.add_subplot(1, 4, i+1)
         axn.set_title(f'Class: \'{class_name}\'')
         axn.axis('off')
-        axn.imshow(inputs[u].permute(1, 2, 0))     
+        matplotlib_imshow(inputs[u],one_channel=True) # <-- PyTorch Tutorial Helper
     plt.tight_layout(pad=1.0)
     plt.show()
 
-def train_model(device, model, dataloaders, criterion=None, 
-                optimizer=None, scheduler=None, num_epochs=100, 
-                checkpoints=10, output_dir='output', 
+    
+def train_model(device, model, dataloaders, dataset_sizes, 
+                criterion=None, optimizer=None, scheduler=None, 
+                num_epochs=100, checkpoints=10, output_dir='output', 
                 status=1, train_acc=0, track_steps=False,
                 seed=414921):
     ''' Helper function to train PyTorch model based on parameters '''
@@ -80,7 +106,7 @@ def train_model(device, model, dataloaders, criterion=None,
     if not optimizer:
         optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     if not scheduler:
-        exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
 
     # send the model to the device
     model = model.to(device)
@@ -124,7 +150,7 @@ def train_model(device, model, dataloaders, criterion=None,
                         if track_steps:
                             # store per step metrics (WARNING! lots of data)
                             step_metrics.append({
-                                'device': device,
+                                'device': str(device),
                                 'epoch': epoch,
                                 'training_step': training_step,
                                 'training_step_loss': loss.item(),
@@ -160,7 +186,7 @@ def train_model(device, model, dataloaders, criterion=None,
                 
             # store per epoch metrics
             metrics.append({
-                            'device': device,
+                            'device': str(device),
                             'epoch': epoch,
                             'training_epoch_loss': loss.item(),
                             'training_epoch_acc': epoch_acc.item(),
@@ -226,3 +252,94 @@ def train_model(device, model, dataloaders, criterion=None,
         print(f'GPU Available:  {cuda_availability}')
         print(f'Current Device: {device} ({device_name})')
         print('***********************************\n')
+
+def images_to_probs(net, images):
+    '''
+    Generates predictions and corresponding probabilities from a trained
+    network and a list of images
+    '''
+    output = net(images)
+    # convert output probabilities to predicted class
+    _, preds_tensor = torch.max(output, 1)
+    preds = np.squeeze(preds_tensor.numpy())
+    return preds, [F.softmax(el, dim=0)[i].item() for i, el in zip(preds, output)]
+
+def test_model(dataloader,num_pred=1,display=False):
+    # get a batach
+    inputs, classes = next(iter(dataloader))
+    # select 'num_pred' unique classes to demo
+    uni, ind = np.unique(classes, return_index=True)
+    use = np.random.choice(ind, num_pred, replace=False)
+    if display:
+        fig = plt.figure(figsize=(10,4))
+        fig.suptitle("Predictions", fontsize=16)
+    for i,u in enumerate(use):
+        class_name = classes[u].item()
+        input_d = inputs[u].to(device)
+        output = model(input_d)
+        output = output.to(device)
+        index = output.cpu().data.numpy().argmax()
+        if not display: 
+            print(index)
+        else:
+            # display predictions
+            class_name = classes[u].item()
+            axn = fig.add_subplot(1, 4, i+1)
+            axn.set_title(f'Class: \'{index}\'')
+            axn.axis('off')
+            axn.imshow(inputs[u].permute(1, 2, 0))     
+        plt.tight_layout(pad=1.0)
+        plt.show()
+        
+
+#### Begin PyTocrch Tutorial Helpers
+# The following helper functions come from a PyTorch tutorial 
+# ref: https://pytorch.org/tutorials/intermediate/tensorboard_tutorial.html
+#### 
+def images_to_probs(net, images):
+    '''
+    Generates predictions and corresponding probabilities from a trained
+    network and a list of images
+    '''
+    output = net(images)
+    # convert output probabilities to predicted class
+    _, preds_tensor = torch.max(output, 1)
+    preds = np.squeeze(preds_tensor.cpu().data.numpy())
+    return preds, [F.softmax(el, dim=0)[i].item() for i, el in zip(preds, output)]
+
+
+def plot_classes_preds(net, images, labels, classes):
+    '''
+    Generates matplotlib Figure using a trained network, along with images
+    and labels from a batch, that shows the network's top prediction along
+    with its probability, alongside the actual label, coloring this
+    information based on whether the prediction was correct or not.
+    Uses the "images_to_probs" function.
+    '''
+    preds, probs = images_to_probs(net, images)
+    print(labels)
+    
+    # plot the images in the batch, along with predicted and true labels
+    fig = plt.figure(figsize=(12, 48))
+    for idx in np.arange(4):
+        ax = fig.add_subplot(1, 4, idx+1, xticks=[], yticks=[])
+        matplotlib_imshow(images[idx], one_channel=True)
+        ax.set_title("{0}, {1:.1f}%\n(label: {2})".format(
+            classes[preds[idx]],
+            probs[idx] * 100.0,
+            classes[labels[idx]]),
+                    color=("green" if preds[idx]==labels[idx].item() else "red"))
+    return fig
+
+# helper function to show an image
+def matplotlib_imshow(img, one_channel=False):
+    if one_channel:
+        img = img.mean(dim=0)
+    img = img / 2 + 0.5     # unnormalize
+    npimg = img.cpu().data.numpy()
+    if one_channel:
+        plt.imshow(npimg, cmap="Greys")
+    else:
+        plt.imshow(np.transpose(npimg, (1, 2, 0)))
+####
+#### End PyTocrch Tutorial Helpers
