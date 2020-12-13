@@ -22,17 +22,36 @@ from sklearn import linear_model
 from sklearn.metrics import mean_squared_error
 
 
+def mnist_dataloader(data_transform, batch_size, 
+                     data_dir='../../data', download=True,
+                     train=True):
+    if not os.path.isdir(data_dir):
+        os.mkdir(data_dir)
+
+    # get the data
+    dataset = torchvision.datasets.MNIST(root=data_dir, 
+                                        train=train,
+                                        download=download, 
+                                        transform=data_transform)
+    print(f'Data is located in \'{data_dir}\'')
+
+    # make the dataloader
+    dataloader = torch.utils.data.DataLoader(dataset=dataset, 
+                                             batch_size=batch_size,
+                                             shuffle=True, 
+                                             num_workers=4)
+    return {'dataset':dataset, 'dataloader':dataloader}
 
 
 def train_model(device, model, dataloaders, criterion=None, 
                 optimizer=None, scheduler=None, num_epochs=100, 
-                checkpoints=10, model_dir='models', 
+                checkpoints=10, output_dir='output', 
                 status=1, train_acc=0, track_steps=False,
                 seed=414921):
     ''' Helper function to train PyTorch model based on parameters '''
     # create the model directory if it doesn't exist
-    if not os.path.isdir(model_dir):
-        os.mkdir(model_dir)
+    if not os.path.isdir(output_dir):
+        os.mkdir(output_dir)
 
     # configure the training if it was not specified by user
     if not criterion:
@@ -129,8 +148,8 @@ def train_model(device, model, dataloaders, criterion=None,
 
         ####### save checkpoint after epoch
         if (epoch > 0 and epoch != num_epochs-1) and \
-            ((epoch+1) % checkpoints == 0 and os.path.isdir(save_dir)):
-            checkpoint=os.path.join(save_dir,
+            ((epoch+1) % checkpoints == 0 and os.path.isdir(output_dir)):
+            checkpoint=os.path.join(output_dir,
                                 f'epoch{epoch+1}_checkpoint_model.th')
             torch.save({
                 'epoch': epoch + 1,
@@ -138,7 +157,7 @@ def train_model(device, model, dataloaders, criterion=None,
                 'best_acc': best_acc,
             }, checkpoint)
             # dump the data for later
-            json_file = os.path.join(save_dir,
+            json_file = os.path.join(output_dir,
                                     f'epoch{epoch+1}_checkpoint_metrics.json')
             with open(json_file, 'w') as fp:
                 json.dump(metrics, fp)
@@ -149,15 +168,15 @@ def train_model(device, model, dataloaders, criterion=None,
             break
     
     ####### save final checkpoint
-    if os.path.isdir(save_dir):
-        checkpoint= os.path.join(save_dir, 'final_model.th')
+    if os.path.isdir(output_dir):
+        checkpoint= os.path.join(output_dir, 'final_model.th')
         # save the model
         torch.save({
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
         }, checkpoint)
         # dump the data for later
-        metric_path = os.path.join(save_dir,'final_metrics.json')
+        metric_path = os.path.join(output_dir,'final_metrics.json')
         with open(metric_path, 'w') as fp:
             json.dump(metrics, fp)
     #######
@@ -181,12 +200,8 @@ def train_model(device, model, dataloaders, criterion=None,
             device = torch.device('cuda:{}'.format(torch.cuda.current_device()))
         else:
             device = 'cpu'
-        print('\n*************************')
-        print('GPU Available: {}'.format(cuda_availability))
-        print('Current Device: {}'.format(device))
-        print('*************************\n')
-    
-        # display the GPU info
-        if cuda_availability and verbose:
-            !nvidia-smi
-    
+        device_name = torch.cuda.get_device_name()
+        print('\n***********************************')
+        print(f'GPU Available:  {cuda_availability}')
+        print(f'Current Device: {device} ({device_name})')
+        print('***********************************\n')

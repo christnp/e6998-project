@@ -9,16 +9,20 @@ import matplotlib.pyplot as plt
 import json
 from pprint import pprint
 
-# use a GPU if there is one available
-cuda_availability = torch.cuda.is_available()
-if cuda_availability:
-    device = torch.device('cuda:{}'.format(torch.cuda.current_device()))
-else:
-    device = 'cpu'
-print('\n*************************')
-print('GPU Available: {}'.format(cuda_availability))
-print('Current Device: {}'.format(device))
-print('*************************\n')
-# display the GPU info
-if cuda_availability:
-    !nvidia-smi
+
+
+
+   
+# helper function to get GPU name
+# tested on Tesla V100, P100, K80
+def get_gpu_name(gpu_class='Tesla',verbose=0):
+    import subprocess
+    import re
+    nvidia_smi = subprocess.check_output(['nvidia-smi']).decode('utf8')
+    match = re.search(r'{} (\S+)'.format(gpu_class), nvidia_smi)
+    gpu = match.group(1).split('-')[0]
+    if verbose > 0:
+        print('GPU: {}'.format(gpu))
+    if verbose == 2:
+        print(nvidia_smi)
+    return str(gpu).upper()
