@@ -42,6 +42,27 @@ def mnist_dataloader(data_transform, batch_size,
                                              num_workers=4)
     return {'dataset':dataset, 'dataloader':dataloader}
 
+def dataset_preview(dataloader,title=''):
+    # Get a batch of training data
+    inputs, classes = next(iter(dataloader))
+    # select 4 unique classes to demo
+    uni, ind = np.unique(classes, return_index=True)
+    use = np.random.choice(ind, 4, replace=False)
+    # display samles
+    # title = f'Samples of \'{}\' Dataset'
+    if not title:
+        title = f'Samples of Dataset'
+
+    fig = plt.figure(figsize=(10,4))
+    fig.suptitle(title, fontsize=16)
+    for i,u in enumerate(use):
+        class_name = classes[u].item()
+        axn = fig.add_subplot(1, 4, i+1)
+        axn.set_title(f'Class: \'{class_name}\'')
+        axn.axis('off')
+        axn.imshow(inputs[u].permute(1, 2, 0))     
+    plt.tight_layout(pad=1.0)
+    plt.show()
 
 def train_model(device, model, dataloaders, criterion=None, 
                 optimizer=None, scheduler=None, num_epochs=100, 
