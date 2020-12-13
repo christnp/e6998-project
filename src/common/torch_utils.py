@@ -216,14 +216,15 @@ def train_model(device, model, dataloaders, dataset_sizes,
     
     ####### save final checkpoint
     if os.path.isdir(output_dir):
-        checkpoint= os.path.join(output_dir, 'final_model.th')
+        timestamp = time.strftime("%Y-%m-%dT%H%M%S")
+        checkpoint= os.path.join(output_dir, f'final_model_{timestamp}.th')
         # save the model
         torch.save({
             'state_dict': model.state_dict(),
             'best_acc': best_acc,
         }, checkpoint)
         # dump the data for later
-        metric_path = os.path.join(output_dir,'final_metrics.json')
+        metric_path = os.path.join(output_dir,f'final_metrics_{timestamp}.json')
         with open(metric_path, 'w') as fp:
             json.dump(metrics, fp)
     #######
@@ -240,58 +241,23 @@ def train_model(device, model, dataloaders, dataset_sizes,
     return model, metrics_df, step_metrics_df
 
 
-    def get_device(verbose=False):
-        # use a GPU if there is one available
-        cuda_availability = torch.cuda.is_available()
-        if cuda_availability:
-            device = torch.device('cuda:{}'.format(torch.cuda.current_device()))
-        else:
-            device = 'cpu'
+def get_device(verbose=True):
+    # use a GPU if there is one available
+    cuda_availability = torch.cuda.is_available()
+    if cuda_availability:
+        device = torch.device('cuda:{}'.format(torch.cuda.current_device()))
+    else:
+        device = 'cpu'
+    if verbose:
         device_name = torch.cuda.get_device_name()
         print('\n***********************************')
         print(f'GPU Available:  {cuda_availability}')
         print(f'Current Device: {device} ({device_name})')
         print('***********************************\n')
+    
+    return device
 
-def images_to_probs(net, images):
-    '''
-    Generates predictions and corresponding probabilities from a trained
-    network and a list of images
-    '''
-    output = net(images)
-    # convert output probabilities to predicted class
-    _, preds_tensor = torch.max(output, 1)
-    preds = np.squeeze(preds_tensor.numpy())
-    return preds, [F.softmax(el, dim=0)[i].item() for i, el in zip(preds, output)]
-
-def test_model(dataloader,num_pred=1,display=False):
-    # get a batach
-    inputs, classes = next(iter(dataloader))
-    # select 'num_pred' unique classes to demo
-    uni, ind = np.unique(classes, return_index=True)
-    use = np.random.choice(ind, num_pred, replace=False)
-    if display:
-        fig = plt.figure(figsize=(10,4))
-        fig.suptitle("Predictions", fontsize=16)
-    for i,u in enumerate(use):
-        class_name = classes[u].item()
-        input_d = inputs[u].to(device)
-        output = model(input_d)
-        output = output.to(device)
-        index = output.cpu().data.numpy().argmax()
-        if not display: 
-            print(index)
-        else:
-            # display predictions
-            class_name = classes[u].item()
-            axn = fig.add_subplot(1, 4, i+1)
-            axn.set_title(f'Class: \'{index}\'')
-            axn.axis('off')
-            axn.imshow(inputs[u].permute(1, 2, 0))     
-        plt.tight_layout(pad=1.0)
-        plt.show()
-        
-
+    
 #### Begin PyTocrch Tutorial Helpers
 # The following helper functions come from a PyTorch tutorial 
 # ref: https://pytorch.org/tutorials/intermediate/tensorboard_tutorial.html
@@ -318,7 +284,7 @@ def plot_classes_preds(net, images, labels, classes):
     '''
     preds, probs = images_to_probs(net, images)
     print(labels)
-    
+
     # plot the images in the batch, along with predicted and true labels
     fig = plt.figure(figsize=(12, 48))
     for idx in np.arange(4):
