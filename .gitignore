@@ -8,5 +8,8 @@
 # keep data directory, but ignore data
 data/*/
 
+# ignore model files
+*.th
+
 # ignore jupyter checkpoints at all levels
 **/.ipynb_checkpoints/
