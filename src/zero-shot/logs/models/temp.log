@@ -1,0 +1,1 @@
+Namespace(dataset='models', gamma=0.5, hidden_dim=1600, log_file='temp.log', log_to_file=True, lr=1e-05, model_file='models/lr5_opt4_ss500_w16_s4.pt', nthreads=8, num_epochs=1000, opt_decay=0.001, shots=4, step_size=200, ways=32, weight_model='weightnet')

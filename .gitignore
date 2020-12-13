@@ -13,3 +13,6 @@ data/*/
 
 # ignore jupyter checkpoints at all levels
 **/.ipynb_checkpoints/
+
+# ignore the example ZSL project (we can clone if from the notebook)
+src/zero-shot/cvcZSL
