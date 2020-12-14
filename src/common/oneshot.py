@@ -5,8 +5,12 @@
 #          Nicholas Christman (nc2677@columbia.edu)
 # organization: Columbia University
 # status: <course work>
-# description: library of helper functions specifically used for one-shot
-#              learning. Refer to accompanying jupyter notebook.
+# description:  library of helper functions specifically used for one-shot
+#               learning. Refer to accompanying jupyter notebook. A lot of this
+#               code came from reference [1] below, but there appears to have 
+#               been a lot of mistakes (e.g., not using self.variable in classes
+#               was causing undefined varialbe errors, etc.); as such, some of
+#               the code has been modified to work in our environment.
 # references: 
 #    [1] https://gist.github.com/ttchengab/ad136f0af59c6e1362f16a9f557f3166
 # Changelog: 
@@ -15,28 +19,17 @@
 import sys
 import time
 import os
-import copy
 import warnings
+import random
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import json
-from pprint import pprint
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from torch.optim import lr_scheduler
-import torch.backends.cudnn as cudnn
 import torchvision
-from torchvision import datasets, models, transforms
-from torch.utils.data import Subset
 
-from scipy.optimize import curve_fit
-from sklearn import linear_model
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
+import PIL
+
 
 
 
@@ -44,14 +37,11 @@ from sklearn.model_selection import train_test_split
 ####
 #### Begin one-shot helpers
 
-
-
 # training helper for one-shot, siamese network
 # source: https://gist.github.com/ttchengab/38309e1474e5837d92256673c6aa3bac#file-train-py
-def train(model, train_loader, val_loader, num_epochs, criterion):
+def train(device, model, train_loader, val_loader, num_epochs, criterion, optimizer):
     train_losses = []
     val_losses = []
-    cur_step = 0
     for epoch in range(num_epochs):
         running_loss = 0.0
         model.train()
@@ -93,7 +83,7 @@ def train(model, train_loader, val_loader, num_epochs, criterion):
 
 # evaluation helper for one-shot learning
 # srouce: https://gist.github.com/ttchengab/cb7377108368cca87551b51aa11cf053#file-eval-py
-def eval(model, test_loader):
+def eval(device, model, test_loader):
     with torch.no_grad():
         model.eval()
         correct = 0
@@ -130,7 +120,8 @@ def eval(model, test_loader):
 # OmniglotDataset
 #    This class works under the directory structure of the Omniglot Dataset
 #    It creates the pairs of images for inputs, same character label = 1, vice versa
-class OmniglotDataset(Dataset):
+class OmniglotDataset(torch.utils.data.Dataset):
+# pylint: disable=no-member
     '''
         categories is the list of different alphabets (folders)
         root_dir is the root directory leading to the alphabet files, could be /images_background or /images_evaluation
@@ -149,36 +140,38 @@ class OmniglotDataset(Dataset):
         img2 = None
         label = None
         if idx % 2 == 0: # select the same character for both images
-            category = random.choice(categories)
+            category = random.choice(self.categories)
             character = random.choice(category[1])
-            imgDir = root_dir + category[0] + '/' + character
+            imgDir = self.root_dir + category[0] + '/' + character
             img1Name = random.choice(os.listdir(imgDir))
             img2Name = random.choice(os.listdir(imgDir))
-            img1 = Image.open(imgDir + '/' + img1Name)
-            img2 = Image.open(imgDir + '/' + img2Name)
+            img1 = PIL.Image.open(imgDir + '/' + img1Name)
+            img2 = PIL.Image.open(imgDir + '/' + img2Name)
             label = 1.0
         else: # select a different character for both images
-            category1, category2 = random.choice(categories), random.choice(categories)
-            category1, category2 = random.choice(categories), random.choice(categories)
+            category1, category2 = random.choice(self.categories), random.choice(self.categories)
+            category1, category2 = random.choice(self.categories), random.choice(self.categories)
             character1, character2 = random.choice(category1[1]), random.choice(category2[1])
-            imgDir1, imgDir2 = root_dir + category1[0] + '/' + character1, root_dir + category2[0] + '/' + character2
+            imgDir1, imgDir2 = self.root_dir + category1[0] + '/' + character1, self.root_dir + category2[0] + '/' + character2
             img1Name = random.choice(os.listdir(imgDir1))
             img2Name = random.choice(os.listdir(imgDir2))
             while img1Name == img2Name:
                 img2Name = random.choice(os.listdir(imgDir2))
             label = 0.0
-            img1 = Image.open(imgDir1 + '/' + img1Name)
-            img2 = Image.open(imgDir2 + '/' + img2Name)
+            img1 = PIL.Image.open(imgDir1 + '/' + img1Name)
+            img2 = PIL.Image.open(imgDir2 + '/' + img2Name)
         if self.transform:
             img1 = self.transform(img1)
             img2 = self.transform(img2)
+        # vv VC code pylint compplains about from_numpy, it's fine
         return img1, img2, torch.from_numpy(np.array([label], dtype=np.float32))  
     
 # NWayShotSet function for creating dataset (included for completeness)
 #    This class works under the directory structure of the Omniglot Dataset
 #    It creates the pairs of images for inputs, same character label = 1, vice versa
 # source: https://gist.github.com/ttchengab/5010a1da5b99166bb6fba9fce47a6cfe#file-nwayoneshotset-py
-class NWayOneShotEvalSet(Dataset):
+class NWayOneShotEvalSet(torch.utils.Dataset):
+# pylint: disable=no-member
     '''
         categories is the list of different alphabets (folders)
         root_dir is the root directory leading to the alphabet files, could be 
@@ -197,11 +190,11 @@ class NWayOneShotEvalSet(Dataset):
         return self.setSize
     def __getitem__(self, idx):
         # find one main image
-        category = random.choice(categories)
+        category = random.choice(self.categories)
         character = random.choice(category[1])
-        imgDir = root_dir + category[0] + '/' + character
+        imgDir = self.root_dir + category[0] + '/' + character
         imgName = random.choice(os.listdir(imgDir))
-        mainImg = Image.open(imgDir + '/' + imgName)
+        mainImg = PIL.Image.open(imgDir + '/' + imgName)
         if self.transform:
             mainImg = self.transform(mainImg)
         
@@ -214,24 +207,61 @@ class NWayOneShotEvalSet(Dataset):
             if i == label:
                 testImgName = random.choice(os.listdir(imgDir))
             else:
-                testCategory = random.choice(categories)
+                testCategory = random.choice(self.categories)
                 testCharacter = random.choice(testCategory[1])
-                testImgDir = root_dir + testCategory[0] + '/' + testCharacter
+                testImgDir = self.root_dir + testCategory[0] + '/' + testCharacter
                 while testImgDir == imgDir:
-                    testImgDir = root_dir + testCategory[0] + '/' + testCharacter
+                    testImgDir = self.root_dir + testCategory[0] + '/' + testCharacter
                 testImgName = random.choice(os.listdir(testImgDir))
-            testImg = Image.open(testImgDir + '/' + testImgName)
+            testImg = PIL.Image.open(testImgDir + '/' + testImgName)
             if self.transform:
                 testImg = self.transform(testImg)
             testSet.append(testImg)
+        # vv VC code pylint compplains about from_numpy, it's fine
         return mainImg, testSet, torch.from_numpy(np.array([label], dtype = int))
 
+
+# Simple ConvNet Siamese nsetwork
+# source: https://gist.github.com/branislav1991/f1a16e3d87389091d85699dbb1ba857d#file-siamese-py
+class SimpleSiameseNet(nn.Module):
+# pylint: disable=no-member
+    def __init__(self):
+        super(SimpleSiameseNet,self).__init__()
+
+        self.conv1 = nn.Conv2d(1, 64, 7)
+        self.pool1 = nn.MaxPool2d(2)
+        self.conv2 = nn.Conv2d(64, 128, 5)
+        self.conv3 = nn.Conv2d(128, 256, 5)
+        self.linear1 = nn.Linear(2304, 512)
+
+        self.linear2 = nn.Linear(512, 2)
+      
+    def forward(self, data):
+        res = []
+        for i in range(2): # Siamese nets; sharing weights
+            x = data[i]
+            x = self.conv1(x)
+            x = F.relu(x)
+            x = self.pool1(x)
+            x = self.conv2(x)
+            x = F.relu(x)
+            x = self.conv3(x)
+            x = F.relu(x)
+
+            x = x.view(x.shape[0], -1)
+            x = self.linear1(x)
+            res.append(F.relu(x))
+
+        res = torch.abs(res[1] - res[0]) # <-- VC code pylint compplains, it's fine
+        res = self.linear2(res)
+        return res
 
 # Basic ConvNet Siamese network
 # source: https://gist.github.com/ttchengab/ad136f0af59c6e1362f16a9f557f3166
 class SiameseNet(nn.Module):
+# pylint: disable=no-member
     def __init__(self):
-        super(Net, self).__init__()
+        super(SiameseNet, self).__init__()
         
         # Conv2d(input_channels, output_channels, kernel_size)
         self.conv1 = nn.Conv2d(1, 64, 10) 
@@ -274,15 +304,16 @@ class SiameseNet(nn.Module):
         x2 = self.convs(x2)
         x2 = x2.view(-1, 256 * 6 * 6)
         x2 = self.sigmoid(self.fc1(x2))
-        x = torch.abs(x1 - x2)
+        x = torch.abs(x1 - x2) # <-- VC code pylint compplains, it's fine
         x = self.fcOut(x)
         return x
 
 # More Complex VGG16 Siamese network
 # source: https://gist.github.com/ttchengab/b4d8f5d2fe43a3bb17201ab5400ab458#file-siamesevgg-py
 class VGGSiameseNet(nn.Module):
+# pylint: disable=no-member
     def __init__(self):
-        super(Net, self).__init__()
+        super(VGGSiameseNet, self).__init__()
         self.conv11 = nn.Conv2d(1, 64, 3) 
         self.conv12 = nn.Conv2d(64, 64, 3)  
         self.conv21 = nn.Conv2d(64, 128, 3)
@@ -318,10 +349,11 @@ class VGGSiameseNet(nn.Module):
         x2 = x2.view(-1, 256 * 8 * 8)
         x2 = self.fc1(x2)
         x2 = self.sigmoid(self.fc2(x2))
-        x = torch.abs(x1 - x2)
+        x = torch.abs(x1 - x2) # <-- VC code pylint compplains, it's fine
         x = self.fcOut(x)
         return x
 
 ####
 #### End classes
 ################################
+

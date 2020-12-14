@@ -45,9 +45,9 @@ from sklearn.model_selection import train_test_split
 ####
 #### Begin general PyTorch helpers
 def mnist_dataloader(data_transforms, batch_size, 
-                             pred_size=0.05, include_labels=[],
-                             exclude_labels=[], sample_size=0,
-                             data_dir='../../data', download=True):
+                        pred_size=0.05, include_labels=None,
+                        exclude_labels=None, sample_size=0,
+                        data_dir='../../data', download=True):
     ''' 
     This function returns dataloaders and dataset info for limited 
     MNIST datasets that use the Subloader class in this library of
@@ -57,10 +57,10 @@ def mnist_dataloader(data_transforms, batch_size,
     # create the dir for data
     if not os.path.isdir(data_dir):
         os.mkdir(data_dir)
-        
+
     # standard MNIST training to testing split (used when sample_size>0)
     val_ratio = 10000/60000
-    
+
     print(f'Data will be located in \'{data_dir}\'')
 
     # get the training data
@@ -70,12 +70,12 @@ def mnist_dataloader(data_transforms, batch_size,
                            include_labels=include_labels,
                            exclude_labels=exclude_labels,
                            sample_size=sample_size) 
-    
+
     # adjust the sample size based on ratio or class size
     sample_size = sample_size*val_ratio
     if(sample_size > 0 and sample_size < len(train_set.classes)):
         sample_size = len(train_set.classes)
-        
+
     # get the validation data
     val_set = SubLoader(root=data_dir, train=False, 
                            download=download, 
@@ -84,13 +84,13 @@ def mnist_dataloader(data_transforms, batch_size,
                            exclude_labels=exclude_labels,
                            sample_size=sample_size) 
     # << trying to keep the test to training size equivalent
-    
+
     # split off a small chunk for predicting
     val_idx, pred_idx = train_test_split(list(range(len(val_set))), 
                                           test_size=pred_size)
     val_set = Subset(val_set, val_idx)
     pred_set = Subset(val_set, pred_idx)
-    
+
     # make the dataloader
     dataloaders = {}
     image_datasets = {'train':train_set, 'val':val_set, 'pred':pred_set}
@@ -101,7 +101,7 @@ def mnist_dataloader(data_transforms, batch_size,
     # collect the dataset size and class names
     dataset_sizes = {x: len(image_datasets[x]) for x in image_datasets}
     class_names = image_datasets['train'].classes
-    
+
     return dataloaders, dataset_sizes, class_names
 
 
@@ -113,7 +113,7 @@ def dataset_preview(dataloader,title=''):
     # Get a batch of training data
     inputs, classes = next(iter(dataloader))
     # select 4 unique classes to demo (if they exist)
-    uni, ind = np.unique(classes, return_index=True)
+    _, ind = np.unique(classes, return_index=True)
     sel = 4 if len(ind)>=4 else len(ind)
     use = np.random.choice(ind, sel, replace=False)
     # display samles
@@ -139,6 +139,9 @@ def train_model(device, model, dataloaders, dataset_sizes,
                 status=1, train_acc=0, track_steps=False,
                 seed=414921):
     ''' Helper function to train PyTorch model based on parameters '''
+    # pylint: disable=no-member 
+    # # <-- VC code pylint complains about torch.sum() and .max()
+
     # create the model directory if it doesn't exist
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
@@ -285,6 +288,8 @@ def train_model(device, model, dataloaders, dataset_sizes,
 
 
 def get_device(verbose=True):
+# pylint: disable=no-member 
+# # <-- VC code pylint complains about torch.device()
     # use a GPU if there is one available
     cuda_availability = torch.cuda.is_available()
     if cuda_availability:
@@ -314,6 +319,8 @@ def images_to_probs(net, images):
     Generates predictions and corresponding probabilities from a trained
     network and a list of images
     '''
+    # pylint: disable=no-member 
+    # # <-- VC code pylint complains about torch.max()
     output = net(images)
     # convert output probabilities to predicted class
     _, preds_tensor = torch.max(output, 1)
@@ -385,7 +392,7 @@ class SubLoader(torchvision.datasets.MNIST):
     val_data = SubLoader(root='./data', train=False, download=True, 
                           transform=transform, exclude_labels=[1,5]) 
     '''
-    def __init__(self, *args, include_labels=[], exclude_labels=[], 
+    def __init__(self, *args, include_labels=None, exclude_labels=None, 
                  sample_size=0, **kwargs):
         
         super(SubLoader, self).__init__(*args, **kwargs)
@@ -396,7 +403,7 @@ class SubLoader(torchvision.datasets.MNIST):
         #else:
              # can add training specifics
 
-        if exclude_labels == [] and include_labels == [] and sample_size == 0:
+        if exclude_labels == None and include_labels == None and sample_size == 0:
             return
         
         if exclude_labels and include_labels:
