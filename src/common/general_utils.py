@@ -6,8 +6,9 @@ import subprocess
 import re
 import numpy as np
 
-
-
+# https://stackoverflow.com/questions/26430861/make-pythons-warnings-warn-not-mention-itself
+def warning_on_one_line(message, category, filename, lineno, file=None, line=None):
+    return '%s:%s: %s: %s\n' % (filename, lineno, category.__name__, message)
    
 # helper function to get GPU name
 # NOTE: this has been replaced by the torch.cuda.get_device_name()

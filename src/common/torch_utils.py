@@ -39,7 +39,9 @@ from sklearn import linear_model
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 
+from general_utils import *
 
+warnings.formatwarning = warning_on_one_line
 
 ################################
 ####

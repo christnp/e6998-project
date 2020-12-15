@@ -17,52 +17,189 @@
 #    - 12-13-2020, christnp: initial
 
 import sys
+import errno
 import time
 import os
 import warnings
 import random
+import requests
+import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+from torch.optim import lr_scheduler,Adam
 
 import PIL
 
+from torch_utils import *
+from general_utils import *
 
+
+warnings.formatwarning = warning_on_one_line
 
 
 ################################
 ####
 #### Begin one-shot helpers
 
-# training helper for one-shot, siamese network
-# source: https://gist.github.com/ttchengab/38309e1474e5837d92256673c6aa3bac#file-train-py
-def train(device, model, train_loader, val_loader, num_epochs, criterion, optimizer):
-    train_losses = []
-    val_losses = []
+def oneshot_dataset_preview(dataloader,title=''):
+    # inputs are list(torch(img1),torch(img2),torch(labels))
+    inputs = next(iter(dataloader))
+    # we want [(img1,img2,label),(img1,img2,label),...]
+    sets = list(zip(*inputs))
+     # show 4 sample images, else as many as we have <4
+    sel = 4 if len(sets)>=4 else len(sets)
+    sets = random.sample(list(zip(*inputs)), sel)
+    # set up the figure
+    if not title:
+        title = f'One-Shot Dataset Samples'
+    title = f'{title}  (0=neg, 1=pos)'
+
+    fig = plt.figure(figsize=(12,4))
+    fig.suptitle(title, fontsize=16)
+    for i,(img1,img2,label) in enumerate(sets):
+        axn1 = fig.add_subplot(2, 4, i+1)
+        axn1.set_title(f'Label: \'{label.item()}\'')
+        axn1.axis('off')
+        matplotlib_imshow(img1,one_channel=True) # <-- img1
+        axn2 = fig.add_subplot(2, 4, (i+1)+sel)
+        axn2.set_title(f'Label: \'{label.item()}\'')
+        axn2.axis('off')
+        matplotlib_imshow(img2,one_channel=True) # <-- img2
+    
+    plt.tight_layout(pad=1.0)
+    plt.show()
+
+def train_peak(img1s,img2s,labels,outputs):
+    
+    fig = plt.figure(figsize=(12,6))
+    fig.suptitle('Comparing', fontsize=16)
+    
+    for i in range(len(img1s)):
+        if i >= 4: break
+        output = outputs[i].cpu().data.numpy()[0]
+        axn1 = fig.add_subplot(2, 4, i+1)
+        axn1.set_title(f'output: {output:0.4f},\nlabel:{labels[i].item()}', fontsize=10)
+        if i == 0: axn1.set_ylabel(f'Image 1')
+        else: axn1.set_ylabel('')
+        axn1.set_yticklabels([])
+        axn1.set_xticklabels([])
+        matplotlib_imshow(img1s[i],one_channel=True) # <-- img1
+
+        axn2 = fig.add_subplot(2, 4, i+5)
+        if i == 0: axn2.set_ylabel(f'Image 2')
+        else: axn2.set_ylabel('')        
+        axn2.set_yticklabels([])
+        axn2.set_xticklabels([])
+        matplotlib_imshow(img2s[i],one_channel=True) # <-- img2
+    plt.tight_layout(pad=1.0)
+    plt.show()
+    
+def train_oneshot(device, model, dataloaders, dataset_sizes, 
+                criterion=None, optimizer=None, scheduler=None, 
+                num_epochs=100, checkpoints=10, output_dir='output', 
+                status=10, train_acc=0, track_steps=False,
+                seed=414921):
+    ''' Helper function to train One-shot model based on parameters '''
+    # pylint: disable=no-member 
+    # # <-- VC code pylint complains about torch.sum() and .max()
+
+    # TODO: make a for loop similar to other training function
+    train_loader = dataloaders['train']
+    val_loader = dataloaders['val']
+    # create the model directory if it doesn't exist
+    if not os.path.isdir(output_dir):
+        os.mkdir(output_dir)
+
+    # configure the training if it was not specified by user
+    # ref 1: https://towardsdatascience.com/building-a-one-shot- \
+    #       learning-network-with-pytorch-d1c3a5fafa4a#bc
+    # ref 2: https://becominghuman.ai/siamese-networks-algorithm- \
+    #       applications-and-pytorch-implementation-4ffa3304c18
+    if not criterion:
+        criterion = nn.BCEWithLogitsLoss()
+    if not optimizer:
+        optimizer = Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+    if not scheduler:
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
+
+    # send the model to the device
+    model = model.to(device)
+    
+    since = time.time()
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0.0
+    metrics = []
+    step_metrics = [] # if track_steps=True
+    training_step = 0
+    acc_reached = False
     for epoch in range(num_epochs):
-        running_loss = 0.0
+        training_start_time = time.time()
+        if (epoch) % status == 0 or epoch == num_epochs-1:
+            print()
+            print(f'Epoch {epoch}/{num_epochs - 1}')
+            print('-' * 10)
+        
         model.train()
-        print("Starting epoch " + str(epoch+1))
+        # for phase in ['train', 'val']:
+        #     if phase == 'train':
+        #         model.train()
+        #     else:
+        #         model.eval()
+
+        epoch_phase_start_time = time.time()
+        train_running_loss = 0.0
+        train_running_corrects = 0.0
+        # for oneshot, we have two input images and a label
+        # where label:0=neg and label:1=pos 
         for img1, img2, labels in train_loader:
-            
+            step_start_time = time.time()
             # Forward
             img1 = img1.to(device)
             img2 = img2.to(device)
             labels = labels.to(device)
-            outputs = model(img1, img2)
+            outputs = model(img1, img2)            
+            # check if model predicted the match (1=correct)
+            pred = labels[torch.argmax(outputs)]
             loss = criterion(outputs, labels)
+            
+            # for visualizing every so many epochs
+#             if (epoch) % status == 0:
+#                 train_peak(img1,img2,labels,outputs)
             
             # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
-        avg_train_loss = running_loss / len(train_loader)
-        train_losses.append(avg_train_loss)
+            train_running_loss += loss.item()
+            train_running_corrects += pred.item() #torch.sum(preds == labels.data)
+
+            if track_steps:
+                # store per step metrics (WARNING! lots of data)
+                step_metrics.append({
+                    'device': str(device),
+                    'epoch': epoch,
+                    'training_step': training_step,
+                    'training_step_loss': loss.item(),
+                    'training_step_time': time.time() - step_start_time
+                })
+            training_step += 1
+
+        # TODO: implement scheduling
+        # if phase == 'train':
+        #     scheduler.step()
+        avg_train_loss = train_running_loss / len(train_loader)
+        avg_train_acc = train_running_corrects / len(train_loader)
+        
+        # train_losses.append(avg_train_loss)
         val_running_loss = 0.0
+        val_running_corrects = 0.0
+
+        training_end_time = time.time()
         
         #check validation loss after every epoch
         with torch.no_grad():
@@ -72,14 +209,53 @@ def train(device, model, train_loader, val_loader, num_epochs, criterion, optimi
                 img2 = img2.to(device)
                 labels = labels.to(device)
                 outputs = model(img1, img2)
+                # check if model predicted the match (1=correct)
+                pred = labels[torch.argmax(outputs)]
                 loss = criterion(outputs, labels)
+                
                 val_running_loss += loss.item()
+                val_running_corrects += pred.item() #torch.sum(preds == labels.data)
         avg_val_loss = val_running_loss / len(val_loader)
-        val_losses.append(avg_val_loss)
-        print('Epoch [{}/{}],Train Loss: {:.4f}, Valid Loss: {:.8f}'
-            .format(epoch+1, num_epochs, avg_train_loss, avg_val_loss))
+        avg_val_acc = val_running_corrects / len(val_loader)
+
+        if avg_val_acc > best_acc:
+            best_acc = avg_val_acc
+            best_model_wts = copy.deepcopy(model.state_dict())
+        # val_losses.append(avg_val_loss)
+
+        # print('Epoch [{}/{}],Train Loss: {:.4f}, Valid Loss: {:.8f}'
+        #     .format(epoch+1, num_epochs, avg_train_loss, avg_val_loss))
+        if (epoch) % status == 0 or epoch == num_epochs-1 or acc_reached:
+            # print(f'{phase} Loss: {round(epoch_loss, 4)} Acc: {round(epoch_acc.item(), 4)}')
+            print(f'Train Loss: {round(avg_train_loss, 4)} Train Acc: {round(avg_train_acc, 4)}')
+            print(f'Val Loss: {round(avg_val_loss, 4)} Val Acc: {round(avg_val_acc, 4)}')
+
+        else:
+            prog = '-' * int(((epoch) % status))
+            print('\r{}|{}'.format(prog,epoch),end='')
+        # store per epoch metrics
+        metrics.append({
+                        'device': str(device),
+                        'epoch': epoch,
+                        'average_training_loss': avg_train_loss, 
+                        'average_validation_loss': avg_val_loss,
+                        'training_acc': avg_train_acc,
+                        'validaton_acc': avg_val_acc,
+                        'training_time': training_end_time - training_start_time,
+                        'validation_time': time.time() - training_end_time
+                    })
     print("Finished Training")  
-    return train_losses, val_losses  
+
+    time_elapsed = time.time() - since
+    print(f'Training complete in {time_elapsed // 60}m {time_elapsed % 60}s')
+    print(f'Best val Acc: {round(best_acc, 4)}')
+    # load best model weights
+    model.load_state_dict(best_model_wts)
+    # set up return structures
+    metrics_df = pd.DataFrame(data=metrics)
+    step_metrics_df = pd.DataFrame(data=step_metrics) if step_metrics else None
+
+    return model, metrics_df, step_metrics_df  
 
 # evaluation helper for one-shot learning
 # srouce: https://gist.github.com/ttchengab/cb7377108368cca87551b51aa11cf053#file-eval-py
@@ -123,71 +299,152 @@ def eval(device, model, test_loader):
 class OmniglotDataset(torch.utils.data.Dataset):
 # pylint: disable=no-member
     '''
-        categories is the list of different alphabets (folders)
-        root_dir is the root directory leading to the alphabet files, could be /images_background or /images_evaluation
-        setSize is the size of the train set and the validation set combined
-        transform is any image transformations
+        categories is the list of different alphabets (folders) root is the root 
+        directory leading to the alphabet files, could be /images_background 
+        or /images_evaluationm, and set_size is the size of the train set and the 
+        validation set combined and transform is any image transformations
+        
+        Reference: https://ramsane.gitbook.io/deep-learning/few-shot-learning/omniglot-dataset
     '''
-    def __init__(self, categories, root_dir, setSize, transform=None):
+    def __init__(self, categories, root, set_size, train=True, download=False, transform=None):
         self.categories = categories
-        self.root_dir = root_dir
+        self.root = os.path.join(root,'Omniglot')
+        self.train = train
         self.transform = transform
-        self.setSize = setSize
+        self.set_size = set_size
+        self.download = download
+        # target data location
+        self.training_file = 'images_background'
+        self.test_file = 'images_evaluation'
+        # source data location
+        self.training_url = 'https://raw.github.com/brendenlake/omniglot/master/python/images_background.zip'
+        self.test_url = 'https://raw.github.com/brendenlake/omniglot/master/python/images_evaluation.zip'
+        
+        if self.download:
+            self._download()
+            
+        if not self._check_exists():
+            warnings.warn(f'Dataset not found. You can use download=True to download it',RuntimeWarning)
+            return
+        if self.train:
+            self.classes = os.listdir(os.path.join(self.root,self.training_file))
+        else:
+            self.classes = os.listdir(os.path.join(self.root,self.test_file))
+            
+        
     def __len__(self):
-        return self.setSize
+        return self.set_size
     def __getitem__(self, idx):
         img1 = None
         img2 = None
         label = None
         if idx % 2 == 0: # select the same character for both images
             category = random.choice(self.categories)
-            character = random.choice(category[1])
-            imgDir = self.root_dir + category[0] + '/' + character
+            if self.train:
+                catDir = os.path.join(self.root,self.training_file,category)
+            else:
+                catDir = os.path.join(self.root,self.test_file,category)
+            character = random.choice(os.listdir(catDir))
+            imgDir = os.path.join(catDir,character) #self.root + category[0] + '/' + character
             img1Name = random.choice(os.listdir(imgDir))
             img2Name = random.choice(os.listdir(imgDir))
-            img1 = PIL.Image.open(imgDir + '/' + img1Name)
-            img2 = PIL.Image.open(imgDir + '/' + img2Name)
+            img1 = PIL.Image.open(os.path.join(imgDir, img1Name))
+            img2 = PIL.Image.open(os.path.join(imgDir, img2Name))
             label = 1.0
         else: # select a different character for both images
-            category1, category2 = random.choice(self.categories), random.choice(self.categories)
-            category1, category2 = random.choice(self.categories), random.choice(self.categories)
-            character1, character2 = random.choice(category1[1]), random.choice(category2[1])
-            imgDir1, imgDir2 = self.root_dir + category1[0] + '/' + character1, self.root_dir + category2[0] + '/' + character2
+            category1 = random.choice(self.categories)
+            category2 = random.choice(self.categories)
+            if self.train:
+                catDir1 = os.path.join(self.root,self.training_file,category1)
+                catDir2 = os.path.join(self.root,self.training_file,category2)
+            else:
+                catDir1 = os.path.join(self.root,self.test_file,category1)
+                catDir2 = os.path.join(self.root,self.test_file,category2)
+                
+            character1 = random.choice(os.listdir(catDir1))
+            character2 = random.choice(os.listdir(catDir2))
+            
+            imgDir1 = os.path.join(catDir1,character1)
+            imgDir2 = os.path.join(catDir2,character2)
             img1Name = random.choice(os.listdir(imgDir1))
             img2Name = random.choice(os.listdir(imgDir2))
             while img1Name == img2Name:
                 img2Name = random.choice(os.listdir(imgDir2))
             label = 0.0
-            img1 = PIL.Image.open(imgDir1 + '/' + img1Name)
-            img2 = PIL.Image.open(imgDir2 + '/' + img2Name)
+            img1 = PIL.Image.open(os.path.join(imgDir1, img1Name))
+            img2 = PIL.Image.open(os.path.join(imgDir2, img2Name))
         if self.transform:
             img1 = self.transform(img1)
             img2 = self.transform(img2)
         # vv VC code pylint compplains about from_numpy, it's fine
         return img1, img2, torch.from_numpy(np.array([label], dtype=np.float32))  
     
+    def _download(self):
+        """
+        Download the Omniglot data if it doesn't exist already.
+        Source: https://gist.github.com/branislav1991/f1a16e3d87389091d85699dbb1ba857d#file-siamese-py
+        Update: christnp,2020-12-14: changed download and unzip mechanisms
+        """
+        import requests, zipfile, io
+
+        if self._check_exists():
+            return
+
+        # download files
+        try:
+            os.makedirs(os.path.join(self.root, self.training_file))
+            os.makedirs(os.path.join(self.root, self.test_file))
+        except OSError as e:
+            if e.errno == errno.EEXIST:
+                pass
+            else:
+                raise
+        
+        subdirs = [self.training_file,self.test_file]
+        urls = [self.training_url, self.test_url]
+        for url,subdir in zip(urls,subdirs):
+            print('Downloading ' + url)
+            data = requests.get(url)
+            if data.status_code != 200:
+                warnings.warn(f'Bad URL or website is down, dataset not ' \
+                                    'downloaded! src: {url}',RuntimeWarning)
+            else:
+                z = zipfile.ZipFile(io.BytesIO(data.content))
+                z.extractall(self.root)                
+        
+        print('Done!')
+
+
+    def _check_exists(self):
+        training_files = os.path.join(self.root,self.training_file)
+        test_files = os.path.join(self.root, self.test_file)
+        return os.path.exists(training_files) and os.path.exists(test_files) \
+            and os.listdir(training_files) and os.listdir(test_files)
+             
+        
+    
 # NWayShotSet function for creating dataset (included for completeness)
 #    This class works under the directory structure of the Omniglot Dataset
 #    It creates the pairs of images for inputs, same character label = 1, vice versa
 # source: https://gist.github.com/ttchengab/5010a1da5b99166bb6fba9fce47a6cfe#file-nwayoneshotset-py
-class NWayOneShotEvalSet(torch.utils.Dataset):
+class NWayOneShotEvalSet(torch.utils.data.Dataset):
 # pylint: disable=no-member
     '''
         categories is the list of different alphabets (folders)
         root_dir is the root directory leading to the alphabet files, could be 
         /images_background or /images_evaluation
-        setSize is the size of the train set and the validation set combined
+        set_size is the size of the train set and the validation set combined
         numWay is the number of images (classes) you want to test for evaluation
         transform is any image transformations
     '''
-    def __init__(self, categories, root_dir, setSize, numWay, transform=None):
+    def __init__(self, categories, root_dir, set_size, numWay, transform=None):
         self.categories = categories
         self.root_dir = root_dir
-        self.setSize = setSize
+        self.set_size = set_size
         self.numWay = numWay
         self.transform = transform
     def __len__(self):
-        return self.setSize
+        return self.set_size
     def __getitem__(self, idx):
         # find one main image
         category = random.choice(self.categories)
