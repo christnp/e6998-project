@@ -422,7 +422,7 @@ class SubLoader(torchvision.datasets.MNIST):
             self.data = self.data[mask]
             self.classes = classes #[self.classes[i] for i in class_list]
             self.targets = labels[mask].tolist()
-        else:
+        elif exclude_labels:
             exclude = np.array(exclude_labels).reshape(1, -1)
             mask = ~(labels.reshape(-1, 1) == exclude).any(axis=1)
             classes = [classes[i] for i,_ in enumerate(classes) 
