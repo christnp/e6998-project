@@ -126,7 +126,7 @@ def dataset_preview(dataloader,title=''):
     fig = plt.figure(figsize=(10,4))
     fig.suptitle(title, fontsize=16)
     for i,u in enumerate(use):
-        class_name = classes[u].item()
+        class_name = classes[u].cpu().data#item()
         axn = fig.add_subplot(1, 4, i+1)
         axn.set_title(f'Class: \'{class_name}\'')
         axn.axis('off')
@@ -212,7 +212,7 @@ def train_model(device, model, dataloaders, dataset_sizes,
                 scheduler.step()
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = running_corrects.double() / dataset_sizes[phase]
-            epoch_phase_end_time = time.time()
+            epoch_phase_end_time = time.time()            
             
             # deep copy the model
             if phase == 'val' and epoch_acc > best_acc:
@@ -233,13 +233,26 @@ def train_model(device, model, dataloaders, dataset_sizes,
                 print('\r{}|{}'.format(prog,epoch),end='')
                 
             # store per epoch metrics
-            metrics.append({
-                            'device': str(device),
-                            'epoch': epoch,
-                            'training_epoch_loss': loss.item(),
-                            'training_epoch_acc': epoch_acc.item(),
-                            'training_epoch_time': time.time() - epoch_start_time
-                        })
+            if phase == 'val':
+                validation_time = time.time() - epoch_start_time
+                avg_val_loss = loss.item()
+                avg_val_acc = epoch_acc.item()
+                
+            else:
+                training_time = time.time() - epoch_start_time
+                avg_train_loss = loss.item()
+                avg_train_acc = epoch_acc.item()
+                
+        metrics.append({
+                        'device': str(device),
+                        'epoch': epoch,
+                        'average_training_loss': avg_train_loss, 
+                        'average_validation_loss': avg_val_loss,
+                        'training_acc': avg_train_acc,
+                        'validaton_acc': avg_val_acc,
+                        'training_time': training_time,
+                        'validation_time': validation_time
+                    })
 
         ####### save checkpoint after epoch
         if (epoch > 0 and epoch != num_epochs-1) and \
