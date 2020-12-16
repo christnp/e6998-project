@@ -45,6 +45,83 @@ warnings.formatwarning = warning_on_one_line
 ################################
 ####
 #### Begin one-shot helpers
+def oneshot_dataloader(data_transforms, batch_size, 
+                        pred_size=0.05, include_labels=None,
+                        exclude_labels=None, sample_size=0,
+                        data_dir='../../data', download=True):
+    ''' 
+    This function returns dataloaders and dataset info for limited 
+    MNIST datasets that use the Subloader class in this library of
+    functions. This function adds labels to include or exclude
+    as well as optional limited dataset size (sample_size).
+    '''
+    # create the dir for data
+    if not os.path.isdir(data_dir):
+        os.mkdir(data_dir)
+
+    # standard MNIST training to testing split (used when sample_size>0)
+    val_ratio = 10000/60000
+
+    print(f'Data will be located in \'{data_dir}\'')
+
+    # get the training data
+    train_set = SubLoader(root=data_dir, train=True, 
+                           download=download, 
+                           transform=data_transforms['train'],
+                           include_labels=include_labels,
+                           exclude_labels=exclude_labels,
+                           sample_size=sample_size) 
+
+    
+    for i in range(10):
+        for j in range(500): # create 500 pairs
+            rnd_cls = random.randint(0,8) # choose random class that is not the same class
+            if rnd_cls >= i:
+                rnd_cls = rnd_cls + 1
+
+            rnd_dist = random.randint(0, 100)
+
+            self.train_data.append(torch.stack([train_data_class[i][j], train_data_class[i][j+rnd_dist], train_data_class[rnd_cls][j]]))
+            self.train_labels.append([1,0])
+
+    self.train_data = torch.stack(self.train_data)
+    self.train_labels = torch.tensor(self.train_labels)
+    
+    
+    
+    # adjust the sample size based on ratio or class size
+    sample_size = sample_size*val_ratio
+    if(sample_size > 0 and sample_size < len(train_set.classes)):
+        sample_size = len(train_set.classes)
+
+    # get the validation data
+    val_set = SubLoader(root=data_dir, train=False, 
+                           download=download, 
+                           transform=data_transforms['val'],
+                           include_labels=include_labels,
+                           exclude_labels=exclude_labels,
+                           sample_size=sample_size) 
+    # << trying to keep the test to training size equivalent
+
+    # split off a small chunk for predicting
+    val_idx, pred_idx = train_test_split(list(range(len(val_set))), 
+                                          test_size=pred_size)
+    val_set = Subset(val_set, val_idx)
+    pred_set = Subset(val_set, pred_idx)
+
+    # make the dataloader
+    dataloaders = {}
+    image_datasets = {'train':train_set, 'val':val_set, 'pred':pred_set}
+    for x in image_datasets:
+        dataloaders[x] = torch.utils.data.DataLoader(image_datasets[x], 
+                                                      batch_size=batch_size,
+                                                      shuffle=True, num_workers=4)
+    # collect the dataset size and class names
+    dataset_sizes = {x: len(image_datasets[x]) for x in image_datasets}
+    class_names = image_datasets['train'].classes
+
+    return dataloaders, dataset_sizes, class_names
+
 
 def oneshot_dataset_preview(dataloader,title=''):
     # inputs are list(torch(img1),torch(img2),torch(labels))
@@ -168,8 +245,8 @@ def train_oneshot(device, model, dataloaders, dataset_sizes,
             loss = criterion(outputs, labels)
             
             # for visualizing every so many epochs
-#             if (epoch) % status == 0:
-#                 train_peak(img1,img2,labels,outputs)
+            #if (epoch) % status == 0:
+            #    train_peak(img1,img2,labels,outputs)
             
             # Backward and optimize
             optimizer.zero_grad()
@@ -210,7 +287,7 @@ def train_oneshot(device, model, dataloaders, dataset_sizes,
                 labels = labels.to(device)
                 outputs = model(img1, img2)
                 # check if model predicted the match (1=correct)
-                pred = labels[torch.argmax(outputs)]
+                pred = labels[torch.argmax(outputs)]            
                 loss = criterion(outputs, labels)
                 
                 val_running_loss += loss.item()
@@ -293,6 +370,281 @@ def eval(device, model, test_loader):
 ####
 #### Begin classes
 
+class OneShotSubLoader(torchvision.datasets.MNIST):
+    '''
+    This subloader is meant to grab the MNIST dataset and put it into the
+    correct format needed to One-Shot training. 
+    sample size fairly subsamples the dataset, returned a subsampled set
+    set_size creates a set of images for one-shot learning
+    '''
+    def __init__(self, *args, include_labels=None, exclude_labels=None, 
+                 sample_size=0, oneshot=True, categories=None, set_size=0, **kwargs):
+        
+        super(OneShotSubLoader, self).__init__(*args, **kwargs)
+        
+        self.set_size = set_size if set_size > 0 else len(self.data)
+        self.categories = categories
+        self.oneshot = oneshot
+        # future use
+        #if self.train:
+            # can add training specifics
+        #else:
+             # can add training specifics
+
+        if exclude_labels == None and include_labels == None and sample_size == 0:
+            return
+        
+        if exclude_labels and include_labels:
+            warnings.warn("Cannot both include and exclude classes." \
+                           "Include labels has priority.")
+
+        labels = np.array(self.targets)
+        classes = self.classes
+        if include_labels:
+            include = np.array(include_labels).reshape(1, -1)
+            mask = (labels.reshape(-1, 1) == include).any(axis=1)
+            classes = [classes[i] for i in include_labels]
+            # update the data, classes, and targets/labels
+            self.data = self.data[mask]
+            self.classes = classes #[self.classes[i] for i in class_list]
+            self.targets = labels[mask].tolist()
+        elif exclude_labels:
+            exclude = np.array(exclude_labels).reshape(1, -1)
+            mask = ~(labels.reshape(-1, 1) == exclude).any(axis=1)
+            classes = [classes[i] for i,_ in enumerate(classes) 
+                       if i not in exclude_labels]
+            # update the data, classes, and targets/labels
+            self.data = self.data[mask]
+            self.classes = classes #[self.classes[i] for i in class_list]
+            self.targets = labels[mask].tolist()
+            
+        if sample_size > 0:
+            self.data,self.targets = self.limited_(self.data, self.targets, sample_size)
+            
+    def limited_(self,data,labels,size):
+        '''
+        This function takes a larger dataset (data), 
+        a target size (size), and original labels as 
+        variables to create a subsampled (limite) 
+        dataset of length size. Sratify is used to 
+        evenly split the classes.
+        TODO: Can this be done simply by defining:
+            __len__(self): return self.sample_size?
+        '''
+        labels = np.array(labels)
+        all_samples = len(data) # <-- 100%
+        ratio = size/all_samples
+        # use the sklearn function to effectively split the data
+        _, lim_idx = train_test_split(list(range(all_samples)), 
+                                      test_size=ratio,
+                                      stratify = labels)
+        return [data[lim_idx], list(labels[lim_idx])]
+     
+    def get_labeled_set_(self,tgt_labels,src_labels,src_data):
+        '''
+        This helper returns data associated with tgt_labels
+        '''
+        include = np.array(tgt_labels).reshape(1, -1)
+        mask = (src_labels.reshape(-1, 1) == include).any(axis=1)                
+        return src_data[mask]
+    
+    def __len__(self):
+            return self.set_size
+    
+    def __getitem__(self, idx):
+        return self.data[idx] , self.targets[idx] 
+    
+    
+#         print(f'__getitem__ {idx} shape: {self.data.shape}, type: {type(self.data)}')
+
+#         return  self.data[idx],self.targets[idx] 
+#         # https://pytorch.org/tutorials/recipes/recipes/custom_dataset_transforms_loader.html
+#         if torch.is_tensor(idx):
+#             idx = idx.tolist()
+        
+#         if self.oneshot:
+#             img1 = None
+#             img2 = None
+#             label = None
+#             # define the batch of data
+#             data = self.data[idx, :, :]      
+#             targets = np.array(self.targets[idx])
+#             return data,self.targets[idx]
+# #             if not self.categories and self.targets:
+# #                 warnings.warn("No category set, will randomly select two labels.")
+# #                 self.categories = np.random.choice(targets,2,replace=False)
+            
+# #             if idx % 2 == 0: # select the same character for both images
+# #                 category = random.choice(self.categories)
+# #                 ##### will this work?
+# #                  #include = np.array(category).reshape(1, -1)
+# #                  #mask = (labels.reshape(-1, 1) == include).any(axis=1)                
+# #                  #tmp_data = self.data[mask]
+# #                 tmp_data = self.get_labeled_set_(category,targets,self.data)
+# #                 #####
+# #                 img1_choice, img2_choice = np.random.choice(len(tmp_data),2,replace=False)
+# #                 img1 = tmp_data[img1_choice]
+# #                 img2 = tmp_data[img1_choice]
+# #                 label = 1.0
+# #             else: # select a different character for both images
+# #                 if len(self.categories) > 1:
+# #                     category1,category2 = np.random.choice(self.categories,2,replace=False)
+# #                 else:
+# #                     category1,category2 = np.random.choice(self.categories*2,2,replace=False)
+# #                 tmp1_data = self.get_labeled_set_(category1,targets,self.data)
+# #                 print(tmp1_data.size)
+                
+# #                 tmp2_data = self.get_labeled_set_(category2,targets,self.data)
+# #                 # make the choice of indice
+# #                 img1_choice = np.random.choice(len(tmp1_data),1,replace=False)
+# #                 print(len(img1_choice))
+# #                 img2_choice = np.random.choice(len(tmp2_data),1,replace=False)
+# #                 # now get the data
+# #                 img1 = tmp1_data[img1_choice].cpu().data.numpy()
+# #                 print(img1.size)
+
+# #                 img2 = tmp2_data[img1_choice].cpu().data.numpy()
+# #                 label = 0.0
+                
+# #             # expects PIL image for transorms, etc. So let's do the conversion here
+# #             img1 = transforms.ToPILImage()(img1)
+# #             img2 = transforms.ToPILImage()(img2)
+# #             print(img1.size)
+
+# #             if self.transform:
+# #                 img1 = self.transform(img1)
+# #                 img2 = self.transform(img2)
+                
+# #             return img1, img2, torch.from_numpy(np.array([label], dtype=np.float32)) 
+# #         # oneshot not selected
+#         else:
+#             return
+
+
+        
+class TestSubLoader(torchvision.datasets.MNIST):
+    '''
+    Subloader to extent MNIST dataset
+    '''
+    def __init__(self, *args, **kwargs):
+        
+        super(TestSubLoader, self).__init__(*args, **kwargs)
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        data, target = self.data[idx], self.targets[idx]
+        
+#         data = PIL.Image.fromarray(data)
+        data = transforms.ToPILImage()(data)
+
+        if self.transform is not None:
+            data = self.transform(data)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return data, target
+    
+
+##### ONESHOT DATASET
+class OneShotMNIST(torchvision.datasets.MNIST):
+    '''
+    Subloader extendomg MNIST dataset to create one-shot dataset
+    '''
+    def __init__(self, *args, set_size, positive_class=None,**kwargs):
+        
+        super(OneShotMNIST, self).__init__(*args, **kwargs)
+        # define the one-shot set size (i.e., number of pairs)
+        self.set_size = set_size
+        
+        
+        # spearte the indices based on classes
+        class_idxs = [torch.where(self.targets == class_idx)[0]
+              for class_idx in self.class_to_idx.values()]
+        
+        # adding classes sizes
+        self.class_to_size = {k: len(class_idxs[i]) for i,k \
+                              in enumerate(self.class_to_idx)}
+        
+        # list of class labels
+        labels = list(self.class_to_idx.values())
+        # select positive class
+        if not positive_class:
+            positive_class = random.choice(labels)
+        positive_idxs = list(class_idxs[positive_class])
+        # select the rest of class_idxs as negative class
+        negative_class = labels.copy()
+        negative_class.remove(positive_class)
+        negative_idxs = class_idxs.copy()
+        negative_idxs.pop(positive_class)
+
+        # so now we have a list of positive and negative indices
+        # so let's create the tuple pairs
+        data = []
+        targets = []
+        label = 0.0
+        for i in range(self.set_size):
+            # select random pairs
+            if i % 2 == 0: # select the same number for both images
+                img1_choice,img2_choice = random.sample(positive_idxs,2)
+                img1 = self.data[img1_choice]
+                img2 = self.data[img2_choice]
+                label = 1.0
+            else: # select a different number for both images
+                # randomly select two negaive classes
+                img1_class,img2_class = random.sample(negative_idxs,2)
+                # randomly select an image from each negative class
+                img1_choice = random.choice(img1_class)
+                img2_choice = random.choice(img2_class)
+                # choose the image and set the label
+                img1 = self.data[img1_choice]
+                img2 = self.data[img2_choice]
+                label = 0.0
+            
+            # store the data
+            data.append((img1,img2))
+            targets.append(torch.from_numpy(np.array([label], dtype=np.float32)) )
+        
+        #update the data and target values, set the size ?
+        self.data = data
+        self.targets = targets
+        self.classes = [0,1]
+      
+    def unique_random_split_(to_split):
+        split1,split2 = random.choice(to_split),random.choice(to_split)
+        # if the list to be split is len(1) then there is
+        # no solution
+        if len(split) > 1:
+            while split2 == split1: 
+                split2 = random.choice(to_split)
+        
+        return img1,img2
+        
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        (img1,img2), target = self.data[idx], self.targets[idx]
+        
+#         data = PIL.Image.fromarray(data)
+        img1 = transforms.ToPILImage()(img1)
+        img2 = transforms.ToPILImage()(img2)
+
+
+        if self.transform is not None:
+            img1 = self.transform(img1)
+            img2 = self.transform(img2)
+
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return img1, img2, target#torch.from_numpy(np.array([label], dtype=np.float32)) 
+
+    
+
 # OmniglotDataset
 #    This class works under the directory structure of the Omniglot Dataset
 #    It creates the pairs of images for inputs, same character label = 1, vice versa
@@ -371,6 +723,9 @@ class OmniglotDataset(torch.utils.data.Dataset):
             while img1Name == img2Name:
                 img2Name = random.choice(os.listdir(imgDir2))
             label = 0.0
+            print(os.path.join(imgDir1, img1Name))
+            print(os.path.isdir(os.path.join(imgDir1, img1Name)))
+            
             img1 = PIL.Image.open(os.path.join(imgDir1, img1Name))
             img2 = PIL.Image.open(os.path.join(imgDir2, img2Name))
         if self.transform:
@@ -493,28 +848,37 @@ class SimpleSiameseNet(nn.Module):
 
         self.linear2 = nn.Linear(512, 2)
       
-    def forward(self, data):
-        res = []
-        for i in range(2): # Siamese nets; sharing weights
-            x = data[i]
-            x = self.conv1(x)
-            x = F.relu(x)
-            x = self.pool1(x)
-            x = self.conv2(x)
-            x = F.relu(x)
-            x = self.conv3(x)
-            x = F.relu(x)
+    def forward(self, x1,x2):
+        # 1st image pipeline
+        x1 = self.conv1(x1)
+        x1 = F.relu(x1)
+        x1 = self.pool1(x1)
+        x1 = self.conv2(x1)
+        x1 = F.relu(x1)
+        x1 = self.conv3(x1)
+        x1 = F.relu(x1)
+        x1 = x1.view(x1.shape[0], -1)
+        x1 = self.linear1(x1)
+        x1 = F.relu(x1)
+        # 2nd image pipeline
+        x2 = self.conv1(x2)
+        x2 = F.relu(x2)
+        x2 = self.pool1(x2)
+        x2 = self.conv2(x2)
+        x2 = F.relu(x2)
+        x2 = self.conv3(x2)
+        x2 = F.relu(x2)
+        x2 = x2.view(x2.shape[0], -1)
+        x2 = self.linear1(x2)
+        x2 = F.relu(x2)
 
-            x = x.view(x.shape[0], -1)
-            x = self.linear1(x)
-            res.append(F.relu(x))
-
-        res = torch.abs(res[1] - res[0]) # <-- VC code pylint compplains, it's fine
+        res = torch.abs(x2 - x1) # <-- VC code pylint compplains, it's fine
         res = self.linear2(res)
         return res
 
 # Basic ConvNet Siamese network
 # source: https://gist.github.com/ttchengab/ad136f0af59c6e1362f16a9f557f3166
+# modified to work with MNIST
 class SiameseNet(nn.Module):
 # pylint: disable=no-member
     def __init__(self):
@@ -524,7 +888,7 @@ class SiameseNet(nn.Module):
         self.conv1 = nn.Conv2d(1, 64, 10) 
         self.conv2 = nn.Conv2d(64, 128, 7)  
         self.conv3 = nn.Conv2d(128, 128, 4)
-        self.conv4 = nn.Conv2d(128, 256, 4)
+        self.conv4 = nn.Conv2d(128, 256, 4)    
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(128)
         self.bn3 = nn.BatchNorm2d(128)
@@ -563,6 +927,7 @@ class SiameseNet(nn.Module):
         x2 = self.sigmoid(self.fc1(x2))
         x = torch.abs(x1 - x2) # <-- VC code pylint compplains, it's fine
         x = self.fcOut(x)
+
         return x
 
 # More Complex VGG16 Siamese network
