@@ -2,8 +2,7 @@
 
 ## Introduction
 
-The report that accompanies this work can be found in this repo: [On Finding the Best Strategy for Limited Dataset
-Deep Learning]('On%20Finding%20the%20Best%20Strategy%20for%20Limited%20Dataset%20-%20Project%20Report%20-%20np2647_nc2677.pdf')
+The report that accompanies this work can be found in this repo: [Final Report](On%20Finding%20the%20Best%20Strategy%20for%20Limited%20Dataset%20-%20Project%20Report%20-%20np2647_nc2677.pdf)
 
 Many companies and machine learning practitioners do not have access to extremely large datasets. This constraint makes it very difficult to achieve model effectiveness. The research covered herein provides a perspective on three strategies that have been known to excel on jobs that are constrained by limited data -- namely, data augmentation, transfer learning, and one-shot learning. Each method is compared to the performance of a baseline ResNet-18 model that is trained using the entire dataset. In the end, we show that there is no “one size fits all” approach to choosing a model or process for limited dataset deep learning.
 
