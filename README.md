@@ -2,13 +2,15 @@
 
 ## Introduction
 
-The report that accompanies this work can be found in this repo: [Final Report](On%20Finding%20the%20Best%20Strategy%20for%20Limited%20Dataset%20-%20Project%20Report%20-%20np2647_nc2677.pdf)
+The report that accompanies this work can be found in this repo: <!--[Final Report](On%20Finding%20the%20Best%20Strategy%20for%20Limited%20Dataset%20-%20Project%20Report%20-%20np2647_nc2677.pdf)-->
 
-Many companies and machine learning practitioners do not have access to extremely large datasets. This constraint makes it very difficult to achieve model effectiveness. The research covered herein provides a perspective on three strategies that have been known to excel on jobs that are constrained by limited data -- namely, data augmentation, transfer learning, and one-shot learning. Each method is compared to the performance of a baseline ResNet-18 model that is trained using the entire dataset. In the end, we show that there is no “one size fits all” approach to choosing a model or process for limited dataset deep learning.
+[<img src="resources/report_screenshot.PNG" height="300" style="padding: 10px 10px 10px 20px;  box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);" />](On%20Finding%20the%20Best%20Strategy%20for%20Limited%20Dataset%20-%20Project%20Report%20-%20np2647_nc2677.pdf)
+
+Many companies and machine learning practitioners do not have access to extremely large datasets. This constraint makes it very difficult to achieve model effectiveness. The research covered herein provides a perspective on three strategies that have been known to excel on jobs that are constrained by limited data -- namely, data augmentation, transfer learning, and one-shot learning. Each method is trained using a small subset of the MNIST dataset and then compared to the performance of a baseline ResNet-18 model that is trained using the entire MNIST dataset. In the end, we show that there is no “one size fits all” approach to choosing a model or process for limited dataset deep learning.
 
 ***
 ### Objective
-The goal of the experiments covered by the work in this repo is to provide a survey of different deep learning approaches that attempt or claim to address the issue of training models on limited (good/labelled) datasets.
+The goal of the experiments covered in this research is to provide a survey of different deep learning approaches that attempt or claim to address the issue of limited data.
 
 ***
 ### Environment
@@ -41,7 +43,7 @@ GPU:            NVIDIA Tesla V100 x 1
 </table>
 
 ***
-### Repo structure
+### Code Organization 
 This repository is organized in the following way:
 
     /src
@@ -87,16 +89,20 @@ This repository is organized in the following way:
 
 Note: to leverage the "common" library of Python functions (in src/common), you must include the following:
 ``` python
+# add local path to common/
 sys.path.insert(0, '../common/')
-from oneshot import *
+# then add one or all of the following
+from augmentation_utils import *
+from general_utils import *
+from oneshot_utils import *
+from torch_utils import *
 ```   
 
 ***
-### Running the code
-The majority of content is contained within each of the task specific Jupyter notebooks, as defined above. As such, one must upload the open the notebook on a functional Jupiter notebook server; moreover, it might be desireable it the Jupiter notebook had access to GPUs to achieve optimal training time. 
+### Running the Experiments
+The majority of content is contained within each of the task specific Jupyter notebooks, as defined above. As such, one must upload the notebook to a functional Jupyter notebook server; moreover, to achieve optimal training time it might be desireable if the Jupyter notebook has access to GPUs. Each notebook provides in-line comments as well as some high level descriptions.
 
 Each notebook is organized in a logical manner where all package imports occur first, followed by some administrative functions (version outputs, etc.), and then the core content is executed. As alluded to above, for any extensions or new development one must include the python packages located in the `common` directory. 
-
 ***
 ## References:
 [1] Oh, Yujin, et al. “Deep Learning COVID-19 Features on CXR Using Limited Training Data Sets.” IEEE Transactions on Medical Imaging, vol. 39, no. 8, Aug. 2020, pp. 2688–700. DOI.org (Crossref), doi:10.1109/TMI.2020.2993291.   
