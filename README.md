@@ -2,9 +2,9 @@
 
 ## Introduction
 
-TBC
+The report that accompanies this work can be found in this repo: ![ADD PAPER LINK HERE]('report_np2647_nc2677.pdf')
 
-The report that accompanies this work can be found in this repo: [ADD PAPER LINK HERE]()
+Many companies and machine learning practitioners do not have access to extremely large datasets. This constraint makes it very difficult to achieve model effectiveness. The research covered herein provides a perspective on three strategies that have been known to excel on jobs that are constrained by limited data -- namely, data augmentation, transfer learning, and one-shot learning. Each method is compared to the performance of a baseline ResNet-18 model that is trained using the entire dataset. In the end, we show that there is no “one size fits all” approach to choosing a model or process for limited dataset deep learning.
 
 ***
 ### Objective
@@ -90,30 +90,12 @@ Note: to leverage the "common" library of Python functions (in src/common), you 
 sys.path.insert(0, '../common/')
 from oneshot import *
 ```   
+
 ***
 ### Running the code
 The majority of content is contained within each of the task specific Jupyter notebooks, as defined above. As such, one must upload the open the notebook on a functional Jupiter notebook server; moreover, it might be desireable it the Jupiter notebook had access to GPUs to achieve optimal training time. 
 
-Each notebook is organized in a logical manner where all package imports occur first, followed by some administrative functions (version outputs, etc.), and then the core content is executed. As noted alluded to above, for any extensions or new development one must include the python packages located in the `common` directory. 
-
-   
-## Experiments
-This section provides more details for each of the DL tasks covered in this repository.   
-   
-### Data Augmentation [*](src/augmentation)
-Data agumentation stuff
-   
-### Transfer Learning [*](src/transfer-learning)
-Transfer learning stuff
-   
-### One-Shot Learning [*](src/one-shot)
-One-shot learning stuff
-   
-### Zero-Shot Learning [*](src/zero-shot)
-Zero-shot learning stuff
-
-
-
+Each notebook is organized in a logical manner where all package imports occur first, followed by some administrative functions (version outputs, etc.), and then the core content is executed. As alluded to above, for any extensions or new development one must include the python packages located in the `common` directory. 
 
 ***
 ## References:
