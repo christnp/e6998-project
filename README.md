@@ -6,12 +6,13 @@ TBC
 
 The report that accompanies this work can be found in this repo: [ADD PAPER LINK HERE]()
 
-
+***
 ### Objective
-The goal of the experiments covered in this repo is to simply provide a survey of some different deep learning approaches that attempt or claim to address the issue of training models on limited (good/labelled) data availability.
+The goal of the experiments covered by the work in this repo is to provide a survey of different deep learning approaches that attempt or claim to address the issue of training models on limited (good/labelled) datasets.
 
+***
 ### Environment
-There would be no code if it weren't for the amazing infrastructure and frameworks. This section provides a glance at the tools we leveraged to complete the objective defined above. At the time of these experiments, we relied on the following dependencies:
+There would be no code if it weren't for the amazing infrastructure and frameworks. Below is a glance at the tools we leveraged to complete the objective defined above. At the time of these experiments, we relied on the following dependencies:
 ```
 Python Version:      3.7.8
 PyTorch Version:     1.7.1+cu101
@@ -39,45 +40,62 @@ GPU:            NVIDIA Tesla V100 x 1
     </tr>
 </table>
 
-
-
+***
 ### Repo structure
 This repository is organized in the following way:
 
     /src
       |-- augmentation
-      |     |-- TBD ...      
-      |     |-- models
-      |     |-- results
-      |-- transfer-learning
-      |     |-- <same>      
+      |     |-- augmentation.ipynd
+      |     |-- output <<note: output is stored locally, but not tracked by git>>
+      |
+      |-- baseline
+      |     |-- baseline.ipynd
+      |     |-- output
+      |
+      |-- common <<see Note below>>
+      |     |-- augmentation_utils.py
+      |     |-- general_utils.py
+      |     |-- oneshot_utils.py
+      |     |-- torch_utils.py
+      |
       |-- one-shot
-      |     |-- <same>      
-      |-- zero-shot
-      |     |-- <same>      
+      |     |-- oneshot.ipynd
+      |     |-- output
+      |
+      |-- transfer-learning
+      |     |-- transfer-learning.ipynd
+      |     |-- output    
     
-    /data 
-      |-- MNIST <-- not stored in git
-      |     |-- train
-      |     |-- validate
-      |     |-- test
+    /data <<note: data is downloaded and stored locally, it is not tracked by git>>
+      |-- SubLoader 
+      |     |-- processed <<note: train and test sets>>
+      |     |-- raw <<note: raw data in IDX format>>
+      |
+      |-- Omniglot 
+      |     |-- images_background <<note: training set>>
+      |     |-- images_evaluation <<note: validation set>>
+      |
+      |-- OneShotMNIST 
+            |-- processed
+            |-- raw
+    
+    /resources
+      |-- {resources for repo}
+    
+    {report.pdf}
 
+Note: to leverage the "common" library of Python functions (in src/common), you must include the following:
+``` python
+sys.path.insert(0, '../common/')
+from oneshot import *
+```   
+***
 ### Running the code
-The code execution for all tasks is similar. 
-```terminal
-python one-shot/oneshot.py -m ... -n ... etc.
-```
-Alternatively, the code be executed in a Jupyter notebook (simply import the notebook from this repo!).
+The majority of content is contained within each of the task specific Jupyter notebooks, as defined above. As such, one must upload the open the notebook on a functional Jupiter notebook server; moreover, it might be desireable it the Jupiter notebook had access to GPUs to achieve optimal training time. 
 
-```python
-import torch
-import torch.vision
+Each notebook is organized in a logical manner where all package imports occur first, followed by some administrative functions (version outputs, etc.), and then the core content is executed. As noted alluded to above, for any extensions or new development one must include the python packages located in the `common` directory. 
 
-def do(this)
-    return do_that
-
-
-```
    
 ## Experiments
 This section provides more details for each of the DL tasks covered in this repository.   
@@ -97,6 +115,20 @@ Zero-shot learning stuff
 
 
 
-
+***
 ## References:
-[1] Li, Kai, et al. “Rethinking Zero-Shot Learning: A Conditional Visual Classification Perspective.” ArXiv:1909.05995 [Cs], Nov. 2019. arXiv.org, http://arxiv.org/abs/1909.05995. 
+[1] Oh, Yujin, et al. “Deep Learning COVID-19 Features on CXR Using Limited Training Data Sets.” IEEE Transactions on Medical Imaging, vol. 39, no. 8, Aug. 2020, pp. 2688–700. DOI.org (Crossref), doi:10.1109/TMI.2020.2993291.   
+
+[2] Peng, Xi, et al. “Learning Face Recognition from Limited Training Data Using Deep Neural Networks.” 2016 23rd International Conference on Pattern Recognition (ICPR), IEEE, 2016, pp. 1442–47. DOI.org (Crossref), doi:10.1109/ICPR.2016.7899840.   
+
+[3] Transfer Learning for Computer Vision Tutorial — PyTorch Tutorials 1.7.1 Documentation. https://pytorch.org/tutorials/beginner/transfer_learning_tutorial.html. Accessed 04 Dec. 2020   
+
+[4] Pan, Sinno Jialin, and Qiang Yang. “A Survey on Transfer Learning.” IEEE Transactions on Knowledge and Data Engineering, vol. 22, no. 10, Oct. 2010, pp. 1345–59. DOI.org (Crossref), doi:10.1109/TKDE.2009.191.  
+
+[5] Li Fei-Fei, et al. “One-Shot Learning of Object Categories.” IEEE Transactions on Pattern Analysis and [5 Machine Intelligence, vol. 28, no. 4, Apr. 2006, pp. 594–611. DOI.org (Crossref), doi:10.1109/TPAMI.2006.79.    
+
+[6] Lamba, Harshall. “One Shot Learning with Siamese Networks Using Keras.” Medium, 17 Feb. 2019, https://towardsdatascience.com/one-shot-learning-with-siamese-networks-using-keras-17f34e75bb3d.   
+
+[7] Cheng, Ta-Ying. “Building a One-Shot Learning Network with PyTorch.” Medium, 31 May 2020, https://towardsdatascience.com/building-a-one-shot-learning-network-with-pytorch-d1c3a5fafa4a.    
+
+[8] Holländer, Branislav. “Siamese Networks: Algorithm, Applications And PyTorch Implementation.” Medium, 24 Sept. 2018, https://becominghuman.ai/siamese-networks-algorithm-applications-and-pytorch-implementation-4ffa3304c18.   
