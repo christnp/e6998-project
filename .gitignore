@@ -7,7 +7,7 @@
 
 # keep data directory, but ignore data
 data/*/
-
+output/
 # ignore model files
 *.th
 
